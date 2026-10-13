@@ -73,6 +73,28 @@ python -m src.repo_ingestion <repo> a994785^ a994785 -o results/rest_a994785 --n
 python -m src.drift_detector rules/spring-petclinic-rest.json --run results/rest_a994785
 ```
 
+### 5. Coverage gap in early history, and whether it hides violations
+In 135 early commits (2013), entity classes (`Owner`, `Pet`, `Vet`, ...) live in the **root
+package**, not in `model`. They are therefore unclassified: in the `c9c8c4e` and `a994785`
+comparisons, 62–65 edges are not evaluated, and ARCH-003 is reported as not applicable.
+Check (2026-10-13, Claude's workspace): across all 135 of those commits, **no unclassified class
+has an edge into the presentation, service, repository_api or persistence_impl layers.** Therefore:
+- ARCH-001 and ARCH-002 cannot be affected. Their forbidden targets are always classified,
+  and edges into entities are never forbidden.
+- Even if the root-package entities were treated as `model`, ARCH-003 would have **0** violations.
+The gap limits what ARCH-003 was *applied* to; it did not hide a violation.
+
+### 6. Reproduction on Himel's machine (Windows, Python 3.13.3, 2026-10-13)
+- `python -m pytest -q`: **78 passed**.
+- Baseline `afc8fc1`: 85 classes, 0 unclassified, all 3 rules applicable, **0 findings**. Identical to Claude's run.
+- `16b1476 -> c9c8c4e`: `introduced` ARCH-002 `web.OwnerController -> repository.OwnerRepository` (OwnerController.java:35). Identical.
+- `a994785^ -> a994785`: `resolved`, same edge. Identical.
+- `scan_history.py`: 944 listed, 943 analysed, 808 all-applicable, **35** commits with violations. Identical (250 s on Windows vs 78 s on Linux).
+- Committed as `aad0d15`.
+- Himel displayed the `a994785` diff for `web/OwnerController.java`. It shows the `OwnerRepository`
+  import, field, constructor parameter and 5 call sites replaced by `ClinicService`.
+  **His explicit agree/disagree judgement is pending.**
+
 ## How the rule file evolved (disclosed as a researcher degree of freedom)
 1. The first rule file mapped only the `rest` package to the controller layer. The history scan found
    **0 violations**, but 86 commits had up to 8 unclassified classes (an older `web` MVC package),
@@ -102,5 +124,6 @@ Now each version is checked against the rules that apply to it, and such finding
 - The absence of findings is only as good as dependency extraction. Unclassified edges were 0 in the
   applicable range, and the seeded check shows sensitivity, but runtime-only dependencies are not seen.
 - One repository and three rules; no generalisation.
-- **Verification:** all checks so far were run and read by Claude (the AI assistant). The introducing and
-  resolving commits should be inspected by a human (Himel) before this is reported as verified.
+- **Verification:** the scans and seeds were run by script on two machines with identical results. A human
+  inspection of the resolving commit `a994785` is pending Himel's explicit judgement. The introducing commit
+  `c9c8c4e` has been inspected only by Claude so far.
