@@ -168,3 +168,85 @@ def test_layer_removed_with_violation_counts_as_resolved(config, v1):
     r = DriftDetector(config).analyze_change(v1, after)
     f = next(x for x in r["findings"] if x["rule_id"] == "T-001")
     assert f["status"] == "resolved" and f["rule_no_longer_applicable"] is True
+
+
+# ---------- unclassified classes must never be treated as compliant ----------
+
+def _graph(edges, nodes=(), repo="sample"):
+    g = nx.DiGraph()
+    g.graph["metadata"] = {"repo": repo}
+    g.graph["analysis"] = {"summary": {"unresolved_could_be_internal": 0}}
+    g.add_nodes_from(nodes)
+    for s, t in edges:
+        g.add_edge(s, t, kinds=["field"], evidence=[])
+    return g
+
+
+def test_empty_layer_with_unclassified_classes_is_inconclusive_not_not_applicable(config):
+    # No controller-layer class exists, but an unclassified class does: T-002 cannot be
+    # declared "not applicable" because the unclassified class might be a controller.
+    g = _graph([("x.Mystery", P + "repository.UserRepository")],
+               nodes=[P + "service.UserService", P + "repository.JdbcUserRepository"])
+    r = DriftDetector(config).analyze_snapshot(g)
+    res = r["rule_results"]["snapshot"]["T-002"]
+    assert res["status"] == "inconclusive"
+    assert "unclassified" in res["reason"]
+    assert r["rule_applicability"]["T-002"]["applicable"] is False
+
+
+def test_empty_layer_without_unclassified_classes_is_not_applicable(config):
+    g = _graph([(P + "service.UserService", P + "repository.UserRepository")],
+               nodes=[P + "repository.JdbcUserRepository"])
+    res = DriftDetector(config).analyze_snapshot(g)["rule_results"]["snapshot"]["T-002"]
+    assert res["status"] == "not_applicable"
+
+
+def test_undecided_edges_are_counted_listed_and_block_a_compliant_verdict(config):
+    g = _graph([
+        (P + "controller.C", P + "service.UserService"),        # evaluated, ok
+        (P + "controller.C", "x.Unknown"),                     # undecided for T-002
+        ("x.Other", P + "repository.UserRepository"),           # undecided for T-002 (source unknown)
+        ("x.Other", P + "model.User"),                          # irrelevant: cannot break T-002
+    ], nodes=[P + "service.UserService", P + "repository.JdbcUserRepository"])
+    res = DriftDetector(config).analyze_snapshot(g)["rule_results"]["snapshot"]["T-002"]
+    assert res["status"] == "applicable"
+    assert (res["evaluated"], res["violations"], res["undecided"]) == (1, 0, 2)
+    assert res["verdict"] == "no_violation_found_but_inconclusive"
+    assert {(u["source"], u["target"]) for u in res["undecided_edges"]} == {
+        (P + "controller.C", "x.Unknown"), ("x.Other", P + "repository.UserRepository")}
+
+
+def test_compliant_only_when_nothing_is_unknown(config, v2):
+    res = DriftDetector(config).analyze_snapshot(v2)["rule_results"]["snapshot"]
+    assert res["T-001"]["verdict"] == "compliant"
+    assert res["T-001"]["undecided"] == 0
+    assert res["T-002"]["verdict"] == "violations_found"
+
+
+def test_unresolved_reference_that_could_be_internal_blocks_compliant(config):
+    g = _graph([(P + "service.UserService", P + "repository.UserRepository")],
+               nodes=[P + "repository.JdbcUserRepository", P + "controller.C"])
+    g.graph["analysis"]["summary"]["unresolved_could_be_internal"] = 1
+    res = DriftDetector(config).analyze_snapshot(g)["rule_results"]["snapshot"]["T-001"]
+    assert res["verdict"] == "no_violation_found_but_inconclusive"
+
+
+def test_requires_layers_precondition(config):
+    cfg = copy.deepcopy(config)
+    cfg["rules"][1]["requires_layers"] = ["service"]          # T-002 needs a service layer
+    no_service = _graph([(P + "controller.C", P + "repository.UserRepository")],
+                        nodes=[P + "repository.JdbcUserRepository"])
+    r = DriftDetector(cfg).analyze_snapshot(no_service)
+    assert r["rule_results"]["snapshot"]["T-002"]["status"] == "not_applicable"
+    assert "required layers" in r["rule_results"]["snapshot"]["T-002"]["reason"]
+    assert r["findings"] == []
+    with_service = _graph([(P + "controller.C", P + "repository.UserRepository")],
+                          nodes=[P + "service.S", P + "repository.JdbcUserRepository"])
+    assert DriftDetector(cfg).analyze_snapshot(with_service)["summary"]["by_rule"] == {"T-002": 1}
+
+
+def test_requires_layers_must_name_defined_layers(config):
+    bad = copy.deepcopy(config)
+    bad["rules"][0]["requires_layers"] = ["nope"]
+    with pytest.raises(ValueError):
+        validate_rules(bad)

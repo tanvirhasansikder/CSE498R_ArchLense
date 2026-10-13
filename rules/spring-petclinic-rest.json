@@ -5,16 +5,18 @@
     "url": "https://github.com/spring-petclinic/spring-petclinic-rest",
     "commit": "afc8fc1d3b8ec8de69414482b3bd70a1da78cb95",
     "documentation": "readme.md, section 'Looking for something in particular?': Layer table listing REST API controllers (rest), Service (service/ClinicServiceImpl), and three persistence implementations JDBC (repository/jdbc), JPA (repository/jpa), Spring Data JPA (repository/springdatajpa). readme.md 'Database configuration' selects the implementation with spring.profiles.active.",
-    "baseline_check": "At the baseline commit afc8fc1, no rule is violated and no class is unclassified (verified with ArchLens on 2026-10-13)."
+    "baseline_check": "At the baseline commit afc8fc1, no rule is violated and no class is unclassified (verified with ArchLens on 2026-10-13).",
+    "classification_note": "Mappings for early-history classes (2013) added on 2026-10-13 after a full-history inventory found 61 classes unclassified in some commits; see class_mapping_evidence."
   },
   "layers": [
     {
       "name": "presentation",
       "packages": [
         "org.springframework.samples.petclinic.rest",
-        "org.springframework.samples.petclinic.web"
+        "org.springframework.samples.petclinic.web",
+        "org.springframework.samples.petclinic.validation"
       ],
-      "evidence": "readme Layer table: 'REST API controllers' -> rest folder. The earlier Spring MVC controllers in the web package (present in older history) play the same role; commit a994785f73a848058a4bad7b5bb2ef00f1b2fa2c (2013-02-12, 'made sure the ClinicService facade is used by all Controllers') treats them as controllers that must use the service layer."
+      "evidence": "readme Layer table: 'REST API controllers' -> rest folder. The earlier Spring MVC controllers in the web package (present in older history) play the same role; commit a994785f73a848058a4bad7b5bb2ef00f1b2fa2c (2013-02-12, 'made sure the ClinicService facade is used by all Controllers') treats them as controllers that must use the service layer. Early history: the validation package (form validators) was moved to the web package by commit e924e87 'moved Validator to the web package'."
     },
     {
       "name": "service",
@@ -35,9 +37,13 @@
       "packages": [
         "org.springframework.samples.petclinic.repository.jdbc",
         "org.springframework.samples.petclinic.repository.jpa",
-        "org.springframework.samples.petclinic.repository.springdatajpa"
+        "org.springframework.samples.petclinic.repository.springdatajpa",
+        "org.springframework.samples.petclinic.jdbc",
+        "org.springframework.samples.petclinic.jpa",
+        "org.springframework.samples.petclinic.hibernate",
+        "org.springframework.samples.petclinic.toplink"
       ],
-      "evidence": "readme Layer table: JDBC, JPA, Spring Data JPA folders"
+      "evidence": "readme Layer table: JDBC, JPA, Spring Data JPA folders. Early history (2013-01): root-level jdbc/jpa/hibernate/toplink packages held the Clinic implementations (e.g. HibernateClinic implements Clinic); commit c9c8c4e moved them under repository/."
     },
     {
       "name": "model",
@@ -58,9 +64,10 @@
       "packages": [
         "org.springframework.samples.petclinic.config",
         "org.springframework.samples.petclinic.security",
-        "org.springframework.samples.petclinic.util"
+        "org.springframework.samples.petclinic.util",
+        "org.springframework.samples.petclinic.aspects"
       ],
-      "evidence": "Configuration, security and cross-cutting utilities; not part of the documented layer table"
+      "evidence": "Configuration, security and cross-cutting utilities; not part of the documented layer table. Early history: the aspects package (call monitoring / tracing aspects) was moved to util by commit 0a5ea0b 'moved aspect to util package'."
     },
     {
       "name": "application",
@@ -69,6 +76,45 @@
     }
   ],
   "classes": {
+    "org.springframework.samples.petclinic.BaseEntity": "model",
+    "org.springframework.samples.petclinic.NamedEntity": "model",
+    "org.springframework.samples.petclinic.Owner": "model",
+    "org.springframework.samples.petclinic.Person": "model",
+    "org.springframework.samples.petclinic.Pet": "model",
+    "org.springframework.samples.petclinic.PetType": "model",
+    "org.springframework.samples.petclinic.Specialty": "model",
+    "org.springframework.samples.petclinic.Vet": "model",
+    "org.springframework.samples.petclinic.Vets": "model",
+    "org.springframework.samples.petclinic.Visit": "model",
+    "org.springframework.samples.petclinic.Clinic": "repository_api",
+    "org.springframework.samples.petclinic.HomeController": "presentation",
+    "org.springframework.samples.petclinic.owner.OwnerController": "presentation",
+    "org.springframework.samples.petclinic.owner.OwnersController": "presentation",
+    "org.springframework.samples.petclinic.pet.PetController": "presentation",
+    "org.springframework.samples.petclinic.owners.OwnerController": "presentation",
+    "org.springframework.samples.petclinic.owners.OwnersController": "presentation",
+    "org.springframework.samples.petclinic.owners.pets.PetController": "presentation",
+    "org.springframework.samples.petclinic.owners.OwnerSearchForm": "presentation",
+    "org.springframework.samples.petclinic.appointments.AppointmentsController": "presentation",
+    "org.springframework.samples.petclinic.appointments.AppointmentForm": "presentation",
+    "org.springframework.samples.petclinic.owner.OwnerRepository": "repository_api",
+    "org.springframework.samples.petclinic.pet.PetRepository": "repository_api",
+    "org.springframework.samples.petclinic.owners.OwnerRepository": "repository_api",
+    "org.springframework.samples.petclinic.owners.pets.PetRepository": "repository_api",
+    "org.springframework.samples.petclinic.appointments.AppointmentBook": "repository_api",
+    "org.springframework.samples.petclinic.owner.StubOwnerRepository": "persistence_impl",
+    "org.springframework.samples.petclinic.pet.StubPetRepository": "persistence_impl",
+    "org.springframework.samples.petclinic.owners.StubOwnerRepository": "persistence_impl",
+    "org.springframework.samples.petclinic.owners.pets.StubPetRepository": "persistence_impl",
+    "org.springframework.samples.petclinic.appointments.StubAppointmentBook": "persistence_impl",
+    "org.springframework.samples.petclinic.owner.Owner": "model",
+    "org.springframework.samples.petclinic.pet.Pet": "model",
+    "org.springframework.samples.petclinic.pet.Gender": "model",
+    "org.springframework.samples.petclinic.owners.Owner": "model",
+    "org.springframework.samples.petclinic.owners.pets.Pet": "model",
+    "org.springframework.samples.petclinic.owners.pets.Gender": "model",
+    "org.springframework.samples.petclinic.appointments.Appointment": "model",
+    "org.springframework.samples.petclinic.appointments.Appointments": "model",
     "org.springframework.samples.petclinic.PetClinicApplication": "application",
     "org.springframework.samples.petclinic.PetclinicInitializer": "application",
     "org.springframework.samples.petclinic.ServletInitializer": "application"
@@ -99,7 +145,10 @@
       ],
       "severity": "medium",
       "provenance": "documented",
-      "rationale": "The readme layer table orders REST API controllers above the Service layer. The project history states the rule explicitly: commit a994785f73a848058a4bad7b5bb2ef00f1b2fa2c 'made sure the ClinicService facade is used by all Controllers'."
+      "rationale": "The readme layer table orders REST API controllers above the Service layer. The project history states the rule explicitly: commit a994785f73a848058a4bad7b5bb2ef00f1b2fa2c 'made sure the ClinicService facade is used by all Controllers'. The rule requires controllers to go through the service layer, so it applies only when a service layer exists (requires_layers). Before commit c9c8c4e there was no service layer and controllers used the Clinic data-access interface directly by design.",
+      "requires_layers": [
+        "service"
+      ]
     },
     {
       "id": "ARCH-003",
@@ -116,6 +165,94 @@
       "severity": "medium",
       "provenance": "derived",
       "rationale": "Entities are shared by every layer; a dependency from model to a higher layer would create a cycle between layers."
+    }
+  ],
+  "class_mapping_evidence": [
+    {
+      "layer": "model",
+      "evidence": "Root-package entity classes (2013-01-09..2013-02-13). Annotated @Entity/@MappedSuperclass (Vets: @XmlRootElement); commit 23314c5 'moved all model classes to a dedicated model package' moved exactly these.",
+      "classes": [
+        "org.springframework.samples.petclinic.BaseEntity",
+        "org.springframework.samples.petclinic.NamedEntity",
+        "org.springframework.samples.petclinic.Owner",
+        "org.springframework.samples.petclinic.Person",
+        "org.springframework.samples.petclinic.Pet",
+        "org.springframework.samples.petclinic.PetType",
+        "org.springframework.samples.petclinic.Specialty",
+        "org.springframework.samples.petclinic.Vet",
+        "org.springframework.samples.petclinic.Vets",
+        "org.springframework.samples.petclinic.Visit"
+      ]
+    },
+    {
+      "layer": "repository_api",
+      "evidence": "Root-package Clinic interface ('Retrieve ... from the data store'), implemented by the jdbc/jpa/hibernate Clinic classes; replaced by the repository interfaces in commit c9c8c4e 'moved the ClinicRepository into some separate repos'.",
+      "classes": [
+        "org.springframework.samples.petclinic.Clinic"
+      ]
+    },
+    {
+      "layer": "presentation",
+      "evidence": "Spring MVC controllers in the early sample modules (annotated @Controller), and form-backing objects bound by those controllers (*Form). Existed until commit 87ccf9f 'first step of migration to Spring 3.2'.",
+      "classes": [
+        "org.springframework.samples.petclinic.HomeController",
+        "org.springframework.samples.petclinic.owner.OwnerController",
+        "org.springframework.samples.petclinic.owner.OwnersController",
+        "org.springframework.samples.petclinic.pet.PetController",
+        "org.springframework.samples.petclinic.owners.OwnerController",
+        "org.springframework.samples.petclinic.owners.OwnersController",
+        "org.springframework.samples.petclinic.owners.pets.PetController",
+        "org.springframework.samples.petclinic.owners.OwnerSearchForm",
+        "org.springframework.samples.petclinic.appointments.AppointmentsController",
+        "org.springframework.samples.petclinic.appointments.AppointmentForm"
+      ],
+      "ambiguity": "appointments.AppointmentForm is also used by the AppointmentBook repository interface; checked that classifying it as model instead changes no rule result."
+    },
+    {
+      "layer": "repository_api",
+      "evidence": "Repository interfaces in the early sample modules, each implemented by a class annotated @Repository.",
+      "classes": [
+        "org.springframework.samples.petclinic.owner.OwnerRepository",
+        "org.springframework.samples.petclinic.pet.PetRepository",
+        "org.springframework.samples.petclinic.owners.OwnerRepository",
+        "org.springframework.samples.petclinic.owners.pets.PetRepository",
+        "org.springframework.samples.petclinic.appointments.AppointmentBook"
+      ]
+    },
+    {
+      "layer": "persistence_impl",
+      "evidence": "In-memory repository implementations in the early sample modules, annotated @Repository.",
+      "classes": [
+        "org.springframework.samples.petclinic.owner.StubOwnerRepository",
+        "org.springframework.samples.petclinic.pet.StubPetRepository",
+        "org.springframework.samples.petclinic.owners.StubOwnerRepository",
+        "org.springframework.samples.petclinic.owners.pets.StubPetRepository",
+        "org.springframework.samples.petclinic.appointments.StubAppointmentBook"
+      ]
+    },
+    {
+      "layer": "model",
+      "evidence": "Plain domain classes in the early sample modules (no framework annotations; fields + accessors).",
+      "classes": [
+        "org.springframework.samples.petclinic.owner.Owner",
+        "org.springframework.samples.petclinic.pet.Pet",
+        "org.springframework.samples.petclinic.pet.Gender",
+        "org.springframework.samples.petclinic.owners.Owner",
+        "org.springframework.samples.petclinic.owners.pets.Pet",
+        "org.springframework.samples.petclinic.owners.pets.Gender",
+        "org.springframework.samples.petclinic.appointments.Appointment",
+        "org.springframework.samples.petclinic.appointments.Appointments"
+      ],
+      "ambiguity": "appointments.Appointments (a map of appointments per vet) could be read as a view model; checked that classifying it as presentation instead changes no rule result."
+    },
+    {
+      "layer": "application",
+      "evidence": "Root-package bootstrapping classes (application entry point / servlet initializers).",
+      "classes": [
+        "org.springframework.samples.petclinic.PetClinicApplication",
+        "org.springframework.samples.petclinic.PetclinicInitializer",
+        "org.springframework.samples.petclinic.ServletInitializer"
+      ]
     }
   ]
 }

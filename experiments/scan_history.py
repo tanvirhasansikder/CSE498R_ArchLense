@@ -41,14 +41,20 @@ def main():
     commits = [l.split() for l in subprocess.run(log_args + [a.branch], capture_output=True,
                                                   text=True, check=True).stdout.splitlines()]
     rule_ids = [r["id"] for r in config["rules"]]
+    per_rule_cols = ["status", "evaluated", "violations", "undecided"]
     a.output.parent.mkdir(parents=True, exist_ok=True)
     start = time.time()
-    totals = {"commits": 0, "all_rules_applicable": 0, "with_findings": 0}
+    totals = {"commits": 0, "all_rules_applicable": 0, "with_findings": 0,
+              "with_unclassified": 0}
+    per_rule_tot = {r: {"applicable": 0, "not_applicable": 0, "inconclusive": 0,
+                        "evaluated": 0, "violations": 0, "undecided": 0,
+                        "commits_with_undecided": 0} for r in rule_ids}
     with a.output.open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["index", "commit", "date", "java_files", "types", "edges", "unclassified",
-                    "edges_not_evaluated"] + [f"{r}_applicable" for r in rule_ids]
-                   + [f"{r}_violations" for r in rule_ids] + ["error"])
+                    "edges_with_unclassified_endpoint", "unresolved_could_be_internal"]
+                   + [f"{r}_{c}" for r in rule_ids for c in per_rule_cols] + ["error"])
+        blank = [""] * (len(rule_ids) * len(per_rule_cols))
         for i, (h, date) in enumerate(commits):
             row = [i, h, date]
             try:
@@ -56,26 +62,45 @@ def main():
                     roots = find_source_roots(a.repo, h)
                     n = export_sources(a.repo, h, roots, Path(tmp)) if roots else 0
                     if n == 0:
-                        w.writerow(row + [0] + [""] * (4 + 2 * len(rule_ids)) + ["no java sources"])
+                        w.writerow(row + [0, "", "", "", "", ""] + blank + ["no java sources"])
                         continue
                     g = build_from_source(Path(tmp), {"repo": name, "commit": h})
                     r = det.analyze_snapshot(g)
-                    app = r["rule_applicability"]
-                    by_rule = r["summary"]["by_rule"]
-                    w.writerow(row + [n, g.number_of_nodes(), g.number_of_edges(),
-                                      len(r["classification"]["snapshot"]["unclassified"]),
-                                      r["edges_not_evaluated_unclassified"]["snapshot"]]
-                               + [int(app[x]["applicable"]) for x in rule_ids]
-                               + [by_rule.get(x, 0) for x in rule_ids] + [""])
+                    res = r["rule_results"]["snapshot"]
+                    cells = []
+                    for x in rule_ids:
+                        rr = res[x]
+                        cells += [rr["status"], rr.get("evaluated", ""), rr.get("violations", ""),
+                                  rr.get("undecided", "")]
+                        t = per_rule_tot[x]
+                        t[rr["status"]] += 1
+                        if rr["status"] == "applicable":
+                            t["evaluated"] += rr["evaluated"]
+                            t["violations"] += rr["violations"]
+                            t["undecided"] += rr["undecided"]
+                            t["commits_with_undecided"] += rr["undecided"] > 0
+                    unc = len(r["classification"]["snapshot"]["unclassified"])
+                    w.writerow(row + [n, g.number_of_nodes(), g.number_of_edges(), unc,
+                                      r["edges_not_evaluated_unclassified"]["snapshot"],
+                                      g.graph["analysis"]["summary"]["unresolved_could_be_internal"]]
+                               + cells + [""])
                     totals["commits"] += 1
-                    totals["all_rules_applicable"] += all(app[x]["applicable"] for x in rule_ids)
+                    totals["with_unclassified"] += unc > 0
+                    totals["all_rules_applicable"] += all(res[x]["status"] == "applicable"
+                                                          for x in rule_ids)
                     totals["with_findings"] += bool(r["findings"])
             except Exception as exc:            # record and continue; never silently skip
-                w.writerow(row + [""] * (5 + 2 * len(rule_ids)) + [f"{type(exc).__name__}: {exc}"])
+                w.writerow(row + [""] * 6 + blank + [f"{type(exc).__name__}: {exc}"])
     print(f"Commits listed: {len(commits)}   analysed: {totals['commits']}   "
           f"all rules applicable: {totals['all_rules_applicable']}   "
           f"commits with any violation: {totals['with_findings']}   "
+          f"commits with unclassified classes: {totals['with_unclassified']}   "
           f"time: {time.time() - start:.0f}s")
+    for x, t in per_rule_tot.items():
+        print(f"  {x}: commits applicable {t['applicable']}, not applicable {t['not_applicable']}, "
+              f"inconclusive {t['inconclusive']} | edge checks (summed over applicable commits): "
+              f"evaluated {t['evaluated']}, violations {t['violations']}, undecided {t['undecided']} "
+              f"(in {t['commits_with_undecided']} commits)")
     print(f"Written to {a.output}")
 
 

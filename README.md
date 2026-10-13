@@ -63,9 +63,24 @@ forbidden target layer. *Drift* means a violation present after a change but not
 `introduced`). Violations present before and after are `persisting`; violations only before are
 `resolved`. A structural change that breaks no rule is never a finding.
 
-**Applicability.** A rule is evaluated on a version only if the rule file is for that repository
-and the rule's layers contain classes in that version. Otherwise it is reported as not applicable,
-with the reason. Edges touching an unclassified class are counted, not judged.
+**Rule status per version.**
+- `applicable`: the rule file is for this repository, and every layer the rule needs (source,
+  forbidden target, and any `requires_layers`) contains classes.
+- `not_applicable`: a needed layer has no classes and every class is classified.
+- `inconclusive`: a needed layer has no classes, but some classes are unclassified, so the layer may only
+  look empty. These rules are not evaluated, and the result is never treated as compliant.
+
+**Per-rule accounting** (`rule_results` in `findings.json`), for each applicable rule:
+- `evaluated`: edges actually checked.
+- `violations`: evaluated edges that break the rule.
+- `undecided`: edges with an unclassified endpoint that would break the rule if that endpoint were
+  in a source or forbidden layer. Listed in full.
+- `unresolved_references_could_be_internal`: references the extractor could not resolve that could be
+  project classes.
+
+The verdict is `compliant` only when violations, undecided edges and those unresolved references are all
+0. Otherwise it is `violations_found` or `no_violation_found_but_inconclusive`. Unclassified dependencies are
+never silently treated as compliant.
 
 **Findings** (`findings.json`, `findings.csv`): a stable ID (the same rule, source and target always give
 the same ID), status, rule, layers, every evidence location (file, line, kind), the reason the

@@ -55,7 +55,8 @@ def validate_rules(config: dict) -> None:
         if rule["id"] in ids:
             raise ValueError(f"Duplicate rule id {rule['id']}")
         ids.add(rule["id"])
-        for layer in rule["source_layers"] + rule["forbidden_target_layers"]:
+        for layer in rule["source_layers"] + rule["forbidden_target_layers"] + \
+                rule.get("requires_layers", []):
             if layer not in layers:
                 raise ValueError(f"Rule {rule['id']} uses undefined layer {layer!r}")
     LayerClassifier(config)   # raises on inconsistent layer/class mappings
@@ -69,44 +70,101 @@ class DriftDetector:
 
     # ---------- applicability ----------
     def applicability(self, g: nx.DiGraph) -> dict:
+        """Per rule: status is one of
+          applicable     - the rule is evaluated
+          not_applicable - a layer the rule needs has no classes, and every class is classified
+          inconclusive   - a layer the rule needs has no classes, but some classes are
+                           unclassified, so the layer may only LOOK empty. Not evaluated,
+                           and never reported as compliant.
+        """
         repo = g.graph.get("metadata", {}).get("repo")
         expected = self.config.get("repository")
         layer_sizes = Counter(self.classifier.classify(n).layer for n in g.nodes)
+        n_unclassified = layer_sizes[UNCLASSIFIED]
         result = {}
         for rule in self.config["rules"]:
             if expected and repo and repo != expected:
-                result[rule["id"]] = {"applicable": False,
+                result[rule["id"]] = {"status": "not_applicable", "applicable": False,
                                       "reason": f"rule file is for {expected!r}, graph is {repo!r}"}
                 continue
-            empty_src = [l for l in rule["source_layers"] if layer_sizes[l] == 0]
-            empty_tgt = [l for l in rule["forbidden_target_layers"] if layer_sizes[l] == 0]
-            if len(empty_src) == len(rule["source_layers"]):
-                result[rule["id"]] = {"applicable": False,
-                                      "reason": f"no classes in source layers {empty_src}"}
-            elif len(empty_tgt) == len(rule["forbidden_target_layers"]):
-                result[rule["id"]] = {"applicable": False,
-                                      "reason": f"no classes in target layers {empty_tgt}"}
+            problems = []
+            if all(layer_sizes[l] == 0 for l in rule["source_layers"]):
+                problems.append(f"no classes in source layers {rule['source_layers']}")
+            if all(layer_sizes[l] == 0 for l in rule["forbidden_target_layers"]):
+                problems.append(f"no classes in target layers {rule['forbidden_target_layers']}")
+            missing_req = [l for l in rule.get("requires_layers", []) if layer_sizes[l] == 0]
+            if missing_req:
+                problems.append(f"required layers {missing_req} have no classes")
+            if not problems:
+                note = None if repo else \
+                    "graph has no repository name; applicability assumed from layer contents"
+                result[rule["id"]] = {"status": "applicable", "applicable": True, "reason": note}
+            elif n_unclassified:
+                result[rule["id"]] = {
+                    "status": "inconclusive", "applicable": False,
+                    "reason": "; ".join(problems) + f"; but {n_unclassified} classes are "
+                              "unclassified, so the layer(s) may only look empty"}
             else:
-                note = None
-                if not repo:
-                    note = "graph has no repository name; applicability assumed from layer contents"
-                result[rule["id"]] = {"applicable": True, "reason": note}
+                result[rule["id"]] = {"status": "not_applicable", "applicable": False,
+                                      "reason": "; ".join(problems)}
         return result
 
     # ---------- core check ----------
-    def violations(self, g: nx.DiGraph, applicable: set[str]) -> tuple[dict, int]:
-        """Return ({(rule_id, source, target): rule}, edges_not_evaluated)."""
+    def violations(self, g: nx.DiGraph, applicable: set[str]) -> tuple[dict, int, dict]:
+        """Evaluate applicable rules on every edge.
+
+        Returns (found, edges_with_unclassified_endpoint, per_rule) where per_rule[rule_id] =
+          evaluated - edges whose endpoints are both classified and whose source is in the
+                      rule's source layers (these were actually checked)
+          violations - evaluated edges that break the rule
+          undecided  - edges with an unclassified endpoint that WOULD break the rule if that
+                       endpoint were in a source/forbidden layer. They are not compliant and
+                       not violations: the answer is unknown. Listed in full.
+        """
         found, not_evaluated = {}, 0
         rules = [r for r in self.config["rules"] if r["id"] in applicable]
+        per_rule = {r["id"]: {"evaluated": 0, "violations": 0, "undecided": 0,
+                              "undecided_edges": []} for r in rules}
         for s, t in sorted(g.edges):
             ls, lt = self.classifier.classify(s).layer, self.classifier.classify(t).layer
-            if UNCLASSIFIED in (ls, lt):
-                not_evaluated += 1
-                continue
+            unknown = UNCLASSIFIED in (ls, lt)
+            not_evaluated += unknown
             for rule in rules:
-                if ls in rule["source_layers"] and lt in rule["forbidden_target_layers"]:
-                    found[(rule["id"], s, t)] = rule
-        return found, not_evaluated
+                acc = per_rule[rule["id"]]
+                src_ok = ls in rule["source_layers"]
+                tgt_bad = lt in rule["forbidden_target_layers"]
+                if not unknown:
+                    if src_ok:
+                        acc["evaluated"] += 1
+                        if tgt_bad:
+                            acc["violations"] += 1
+                            found[(rule["id"], s, t)] = rule
+                elif (ls == UNCLASSIFIED or src_ok) and (lt == UNCLASSIFIED or tgt_bad):
+                    acc["undecided"] += 1
+                    acc["undecided_edges"].append({"source": s, "source_layer": ls,
+                                                   "target": t, "target_layer": lt})
+        return found, not_evaluated, per_rule
+
+    def _rule_results(self, g: nx.DiGraph, app: dict, per_rule: dict) -> dict:
+        """Verdict per rule for one version. 'compliant' only when nothing is unknown."""
+        unresolved_ci = g.graph.get("analysis", {}).get("summary", {}).get(
+            "unresolved_could_be_internal", 0)
+        out = {}
+        for rule in self.config["rules"]:
+            rid, a = rule["id"], app[rule["id"]]
+            if a["status"] != "applicable":
+                out[rid] = {"status": a["status"], "verdict": a["status"], "reason": a["reason"]}
+                continue
+            acc = per_rule[rid]
+            if acc["violations"]:
+                verdict = "violations_found"
+            elif acc["undecided"] or unresolved_ci:
+                verdict = "no_violation_found_but_inconclusive"
+            else:
+                verdict = "compliant"
+            out[rid] = {"status": "applicable", "verdict": verdict, **acc,
+                        "unresolved_references_could_be_internal": unresolved_ci}
+        return out
 
     def _classification_summary(self, g: nx.DiGraph) -> dict:
         cls = self.classifier.classify_all(g.nodes)
@@ -128,12 +186,13 @@ class DriftDetector:
     def analyze_snapshot(self, g: nx.DiGraph) -> dict:
         app = self.applicability(g)
         ok = {r for r, a in app.items() if a["applicable"]}
-        found, not_eval = self.violations(g, ok)
+        found, not_eval, per_rule = self.violations(g, ok)
         meta = g.graph.get("metadata", {})
         findings = [self._finding(k, rule, g, "present", {}, meta, "snapshot")
                     for k, rule in sorted(found.items())]
         return self._report("snapshot", {}, meta, app, {"snapshot": not_eval},
-                            {"snapshot": self._classification_summary(g)}, findings)
+                            {"snapshot": self._classification_summary(g)}, findings,
+                            {"snapshot": self._rule_results(g, app, per_rule)})
 
     def analyze_change(self, before: nx.DiGraph, after: nx.DiGraph) -> dict:
         app_b, app_a = self.applicability(before), self.applicability(after)
@@ -151,9 +210,10 @@ class DriftDetector:
             elif r in ok_b and r not in ok_a:
                 reason = f"applicable only before the change (after: {app_a[r]['reason']})"
             app[r] = {"applicable": r in ok_a or r in ok_b, "reason": reason,
-                      "before": app_b[r]["applicable"], "after": app_a[r]["applicable"]}
-        vb, ne_b = self.violations(before, ok_b)
-        va, ne_a = self.violations(after, ok_a)
+                      "before": app_b[r]["applicable"], "after": app_a[r]["applicable"],
+                      "status_before": app_b[r]["status"], "status_after": app_a[r]["status"]}
+        vb, ne_b, pr_b = self.violations(before, ok_b)
+        va, ne_a, pr_a = self.violations(after, ok_a)
         mb, ma = before.graph.get("metadata", {}), after.graph.get("metadata", {})
         findings = []
         for k in sorted(va.keys() - vb.keys()):
@@ -168,9 +228,12 @@ class DriftDetector:
             findings.append(f)
         return self._report("change", mb, ma, app, {"before": ne_b, "after": ne_a},
                             {"before": self._classification_summary(before),
-                             "after": self._classification_summary(after)}, findings)
+                             "after": self._classification_summary(after)}, findings,
+                            {"before": self._rule_results(before, app_b, pr_b),
+                             "after": self._rule_results(after, app_a, pr_a)})
 
-    def _report(self, mode, before_meta, after_meta, app, not_eval, classification, findings):
+    def _report(self, mode, before_meta, after_meta, app, not_eval, classification, findings,
+                rule_results):
         status = Counter(f["status"] for f in findings)
         return {
             "schema": SCHEMA, "mode": mode,
@@ -180,6 +243,7 @@ class DriftDetector:
             "rule_applicability": app,
             "classification": classification,
             "edges_not_evaluated_unclassified": not_eval,
+            "rule_results": rule_results,
             "summary": {"findings": len(findings),
                         "introduced (drift)": status["introduced"],
                         "persisting": status["persisting"],
@@ -221,9 +285,19 @@ def main(argv: list[str] | None = None) -> int:
 
     write_report(report, out)
     print(f"Mode: {report['mode']}")
-    for rid, a in report["rule_applicability"].items():
-        state = "applicable" if a["applicable"] else "NOT applicable"
-        print(f"  {rid}: {state}" + (f" ({a['reason']})" if a["reason"] else ""))
+    for version, results in report["rule_results"].items():
+        print(f"  rule results ({version}):")
+        for rid, r in results.items():
+            if r["status"] != "applicable":
+                print(f"    {rid}: {r['status'].upper()} ({r['reason']})")
+                continue
+            print(f"    {rid}: {r['verdict']}  | evaluated edges {r['evaluated']}, "
+                  f"violations {r['violations']}, undecided (unclassified endpoint) "
+                  f"{r['undecided']}, unresolved refs that could be project types "
+                  f"{r['unresolved_references_could_be_internal']}")
+            for u in r["undecided_edges"][:5]:
+                print(f"      undecided: {u['source']} [{u['source_layer']}] -> "
+                      f"{u['target']} [{u['target_layer']}]")
     for version, c in report["classification"].items():
         print(f"  classes per layer ({version}): {c['per_layer']}")
         for n in c["unclassified"][:10]:

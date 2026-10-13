@@ -46,6 +46,7 @@ One forbidden field was planted per rule into a copy of the baseline (the reposi
 in real code. It is a seeded check, not a measure of recall on naturally occurring violations.
 
 ### 3. Full history scan (`experiments/scan_history.py`, all 944 reachable commits)
+*Figures in this subsection use the rule file as committed in `aad0d15`; section 5 supersedes them.*
 - 943 commits analysed (the first commit has no Java sources); 0 analysis errors.
 - Rule applicability: ARCH-001 and ARCH-002 apply in 849 commits, ARCH-003 in 808 commits,
   and all three in 808. Early commits (2013) use a different package layout, so the rules are
@@ -73,16 +74,70 @@ python -m src.repo_ingestion <repo> a994785^ a994785 -o results/rest_a994785 --n
 python -m src.drift_detector rules/spring-petclinic-rest.json --run results/rest_a994785
 ```
 
-### 5. Coverage gap in early history, and whether it hides violations
-In 135 early commits (2013), entity classes (`Owner`, `Pet`, `Vet`, ...) live in the **root
-package**, not in `model`. They are therefore unclassified: in the `c9c8c4e` and `a994785`
-comparisons, 62–65 edges are not evaluated, and ARCH-003 is reported as not applicable.
-Check (2026-10-13, Claude's workspace): across all 135 of those commits, **no unclassified class
-has an edge into the presentation, service, repository_api or persistence_impl layers.** Therefore:
-- ARCH-001 and ARCH-002 cannot be affected. Their forbidden targets are always classified,
-  and edges into entities are never forbidden.
-- Even if the root-package entities were treated as `model`, ARCH-003 would have **0** violations.
-The gap limits what ARCH-003 was *applied* to; it did not hide a violation.
+### 5. Unclassified classes: from undecided to fully evaluated (revised 2026-10-13)
+
+**Correction to an earlier claim.** A previous version of this section said the unclassified
+root-package classes "cannot affect" ARCH-001/ARCH-002. That argument relied on knowing, from outside
+the rule engine, that those classes were entities. Under the configured rules they were simply
+unclassified, so the edges touching them were **undecided**, neither compliant nor violating.
+ARCH-003 was reported as "not applicable" when it should have been reported as inconclusive.
+Himel raised this objection; it was correct.
+
+**Detector change.** Each rule and version now gets a result:
+- `applicable`: evaluated, with counts of `evaluated` edges, `violations`, and `undecided` edges.
+  An undecided edge has an unclassified endpoint that would break the rule if that endpoint were
+  in a source or forbidden layer; these edges are listed in full.
+- `not_applicable`: a needed layer has no classes **and every class is classified**.
+- `inconclusive`: a needed layer has no classes, but some classes are unclassified, so the layer may
+  only look empty. These rules are not evaluated and are never reported as compliant.
+
+The verdict is `compliant` only if there are 0 violations, 0 undecided edges, and 0 unresolved
+references that could be project classes. Otherwise it is `violations_found` or
+`no_violation_found_but_inconclusive`.
+
+**Classification.** A full-history inventory found **61 distinct classes** that were unclassified in some
+commit, all from 2013-01-09 to 2013-02-13. Each was mapped explicitly, using evidence from the repository
+(recorded per group in `class_mapping_evidence` in the rule file):
+
+| Group | Layer | Evidence |
+|---|---|---|
+| Root-package `BaseEntity, NamedEntity, Owner, Person, Pet, PetType, Specialty, Vet, Vets, Visit` | model | `@Entity`/`@MappedSuperclass` (Vets: `@XmlRootElement`); commit `23314c5` "moved all model classes to a dedicated 'model' package" |
+| Root-package `Clinic` interface | repository_api | Methods "Retrieve ... from the data store"; replaced by repository interfaces in `c9c8c4e` |
+| Root `jdbc`, `jpa`, `hibernate`, `toplink` packages | persistence_impl | `HibernateClinic implements Clinic`, etc.; moved under `repository/` in `c9c8c4e` |
+| Root `aspects` package | infrastructure | Commit `0a5ea0b` "moved aspect to util package" |
+| Root `validation` package | presentation | Commit `e924e87` "moved Validator to the web package" |
+| Early sample modules (`owner`, `pet`, `owners`, `appointments`, `HomeController`; until `87ccf9f`) | per class | `@Controller` = presentation; `@Repository` = persistence_impl; interfaces those implement = repository_api; plain domain classes = model; `*Form` = presentation |
+
+Two assignments are ambiguous: `AppointmentForm` (presentation or model) and `Appointments` (model or
+presentation). They were tested both ways (see the table below).
+
+**Rule precondition.** ARCH-002 now has `requires_layers: ["service"]`. Its text ("must go through the
+service layer") presupposes that a service layer exists. Before `c9c8c4e`, there was none.
+
+**Full-history results (943 analysed commits; Claude's workspace, 2026-10-13):**
+
+| Configuration | Commits with unclassified classes | ARCH-001 applicable / n.a. / inconclusive | ARCH-001 evaluated · violations · undecided | ARCH-002 applicable / n.a. / inconclusive | ARCH-002 evaluated · violations · undecided | ARCH-003 applicable / n.a. / inconclusive | ARCH-003 evaluated · violations · undecided |
+|---|---|---|---|---|---|---|---|
+| Old rule file (commit `aad0d15`) | 135 | 849 / 0 / 94 | 16,345 · 0 · **1,064** (41 commits) | 849 / 0 / 94 | 20,080 · 35 · **1,064** (41 commits) | 808 / 0 / **135** | 12,899 · 0 · 0 |
+| **New rule file (official)** | **0** | 849 / 94 / 0 | 16,755 · 0 · **0** | 849 / 94 / 0 | 20,529 · 35 · **0** | **943** / 0 / 0 | 14,858 · 0 · **0** |
+| New, ambiguous classes swapped | 0 | same | same | same | same | 943 / 0 / 0 | 14,805 · 0 · 0 |
+| New, **without** `requires_layers` | 0 | same | same | 943 / 0 / 0 | 23,632 · **971** · 0 (129 commits) | same | same |
+
+"Evaluated, violations, undecided" are summed over all commits where the rule is applicable, so one
+edge present in many commits is counted once per commit.
+
+**Interpretation.**
+- With the new mappings, every edge in every commit is classified. The result "ARCH-003: 0 violations"
+  now rests on 14,858 actual edge checks across all 943 commits, not on "not applicable".
+- The single historical violation (ARCH-002, `c9c8c4e` → `a994785`, 35 commits) is unchanged.
+- The two ambiguous classes do not affect any verdict.
+- `requires_layers` is consequential. Without it, ARCH-002 also flags 94 commits (2013-01-09..16). **None
+  of those commits contains any service-layer class.** Every extra edge is a controller using the only
+  data-access interface that existed (`web.* -> Clinic`, `owners.*Controller -> owners.*Repository`, ...).
+  That was the original design, so flagging it as drift would be a false positive under the rule's own
+  wording. Both numbers are reported so the choice can be judged.
+- Undecided edge counts are 0 in the official configuration. Unresolved references that could be project
+  classes are also 0 for every commit; they are reported per commit in `results/rest_history.csv`.
 
 ### 6. Reproduction on Himel's machine (Windows, Python 3.13.3, 2026-10-13)
 - `python -m pytest -q`: **78 passed**.
@@ -93,9 +148,10 @@ The gap limits what ARCH-003 was *applied* to; it did not hide a violation.
 - Committed as `aad0d15`.
 - Himel displayed the `a994785` diff for `web/OwnerController.java`. It shows the `OwnerRepository`
   import, field, constructor parameter and 5 call sites replaced by `ClinicService`.
-  **His explicit agree/disagree judgement is pending.**
+  **Himel's judgement (2026-10-13): "Agree".**
 
 ## How the rule file evolved (disclosed as a researcher degree of freedom)
+(Steps 1–4 below happened before section 5's revision; step 5 is section 5.)
 1. The first rule file mapped only the `rest` package to the controller layer. The history scan found
    **0 violations**, but 86 commits had up to 8 unclassified classes (an older `web` MVC package),
    with up to 15 edges not evaluated.
@@ -105,6 +161,8 @@ The gap limits what ARCH-003 was *applied* to; it did not hide a violation.
    official rule file, and ARCH-002's provenance became "documented".
 4. Two root-package bootstrapping classes (`PetclinicInitializer`, `ServletInitializer`) were
    mapped to `application`, alongside `PetClinicApplication`. This removed the last unclassified classes.
+
+5. Explicit mappings for the 61 early-history classes, plus `requires_layers` for ARCH-002 (section 5).
 
 The rules were changed after looking at the data. The change is justified by project
 documentation (a commit message), not by the number of findings, but it must be reported.
@@ -124,6 +182,6 @@ Now each version is checked against the rules that apply to it, and such finding
 - The absence of findings is only as good as dependency extraction. Unclassified edges were 0 in the
   applicable range, and the seeded check shows sensitivity, but runtime-only dependencies are not seen.
 - One repository and three rules; no generalisation.
-- **Verification:** the scans and seeds were run by script on two machines with identical results. A human
-  inspection of the resolving commit `a994785` is pending Himel's explicit judgement. The introducing commit
-  `c9c8c4e` has been inspected only by Claude so far.
+- **Verification:** the scans and seeds were run by script on two machines with identical results (before the
+  section 5 revision; the revised scans have so far been run only in Claude's workspace). Himel inspected the
+  resolving commit `a994785` and agreed. The introducing commit `c9c8c4e` has been inspected only by Claude.
