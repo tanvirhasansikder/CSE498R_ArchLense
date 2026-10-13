@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ArchLens
 
 Explainable architectural drift detection for Java (research prototype).
@@ -139,3 +140,6 @@ under `import_only`, which helps spot extraction gaps.
 - No reflection, dynamic loading, dependency injection, or generated code.
 - Anonymous class bodies are attributed to the enclosing type.
 - Generic type parameters are excluded by name within their declaring scope.
+=======
+# CSE498R_ArchLense
+>>>>>>> origin/main
