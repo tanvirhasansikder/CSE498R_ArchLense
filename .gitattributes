@@ -1,2 +1,2 @@
-# Normalise line endings in the repository; Windows checkouts may use CRLF.
-* text=auto
+# Keep LF line endings in the working copy too (stops CRLF warnings on Windows).
+* text=auto eol=lf

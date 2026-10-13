@@ -4,7 +4,12 @@ Explainable architectural drift detection for Java (research prototype).
 
 ## Status
 - Phase 1 (done): parser (`src/parser.py`) and dependency extractor (`src/dependency_extractor.py`).
-- Phase 2 (in progress): graph builder (`src/graph_builder.py`) and comparator (`src/graph_comparator.py`) are implemented and tested.
+- Phase 2 (done): graph builder (`src/graph_builder.py`), comparator
+  (`src/graph_comparator.py`) and repository ingestion (`src/repo_ingestion.py`).
+  It has been verified on one real commit pair; see
+  `experiments/2026-10-13_petclinic_c953442_diff_verification.md`.
+
+Requires Python 3.12+ (safe tar extraction) and Git on PATH.
 
 ## Setup (Windows PowerShell)
 ```powershell
@@ -22,6 +27,19 @@ python -m src.graph_builder tests\fixtures\sample_java -o results\v1.json --labe
 python -m src.graph_builder tests\fixtures\sample_java_v2 -o results\v2.json --label v2
 python -m src.graph_comparator results\v1.json results\v2.json -o results\diff_v1_v2.json
 ```
+
+## Analyse two commits of a real repository
+```powershell
+python -m src.repo_ingestion <repo_root> <before_commit> <after_commit> -o results\<run_name>
+python experiments\verify_diff.py <repo_root> results\<run_name>
+```
+Each commit's Java sources are read with `git archive` into a temporary folder,
+so the repository is never modified: no checkout and no worktree. By default
+every `src/main/java` folder is analysed and test code is excluded; use
+`--source-root` to override. The output folder holds `before_graph.json`,
+`after_graph.json`, `diff.json` and `run_metadata.json` (commit hashes, dates and
+subjects, source roots, Python and package versions, run time). Evidence file paths are
+relative to the repository root.
 
 ## Architecture graph (`archlens-graph/1`)
 Nodes are project types, identified by fully qualified name, with path, line and
