@@ -153,6 +153,12 @@ def extract_dependencies(parse_report: dict) -> dict:
                         "kind": ref["kind"], "file": f["path"], "line": ref["line"],
                     })
 
+    # An unresolved name can only be a missed *project* dependency if some project
+    # type has that simple name. Everything else is necessarily a library type.
+    simple_names = {qn.rpartition(".")[2] for qn in index.types}
+    for u in unresolved:
+        u["could_be_internal"] = u["raw_name"].partition(".")[0] in simple_names
+
     # Imports of project types that are never actually used in the file.
     import_only = []
     for f in parse_report["files"]:
@@ -175,6 +181,7 @@ def extract_dependencies(parse_report: dict) -> dict:
         "references_external": counts["external"],
         "references_unresolved": counts["unresolved"],
         "references_self_skipped": counts["self"],
+        "unresolved_could_be_internal": sum(u["could_be_internal"] for u in unresolved),
         "resolution_rate": round((total - counts["unresolved"]) / total, 4) if total else None,
         "dependency_edges": len(dependencies),
         "import_only": len(import_only),
@@ -210,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"References: {s['references_total']} total | internal {s['references_internal']} | "
           f"external {s['references_external']} | unresolved {s['references_unresolved']} | "
           f"resolution rate {s['resolution_rate']}")
+    print(f"Unresolved that could be project types: {s['unresolved_could_be_internal']}")
     print(f"Import-only project imports: {s['import_only']}   "
           f"files with parse errors: {s['files_with_parse_errors']}")
     for d in report["dependencies"]:

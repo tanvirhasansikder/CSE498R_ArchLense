@@ -1,0 +1,2 @@
+# Normalise line endings in the repository; Windows checkouts may use CRLF.
+* text=auto

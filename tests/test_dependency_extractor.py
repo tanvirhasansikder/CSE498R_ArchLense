@@ -146,3 +146,13 @@ def test_cli_writes_json(tmp_path):
     out = tmp_path / "deps.json"
     assert main([str(SAMPLE), "-o", str(out)]) == 0
     assert '"dependency_edges": 9' in out.read_text(encoding="utf-8")
+
+
+def test_unresolved_marks_whether_it_could_be_a_project_type():
+    r = extract_dependencies(build_report({
+        "a/A.java": "package a; import x.*; class A { List l; Helper h; }",
+        "b/Helper.java": "package b; public class Helper {}",
+    }))
+    flags = {u["raw_name"]: u["could_be_internal"] for u in r["unresolved_references"]}
+    assert flags == {"List": False, "Helper": True}
+    assert r["summary"]["unresolved_could_be_internal"] == 1
