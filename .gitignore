@@ -1,0 +1,11 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+*.key
+results/*
+!results/.gitkeep
+data/external/
+.vscode/

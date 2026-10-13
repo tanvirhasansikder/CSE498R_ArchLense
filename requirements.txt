@@ -1,0 +1,4 @@
+# Versions verified working together on 2026-10-13 (Python 3.13)
+tree-sitter==0.26.0
+tree-sitter-java==0.23.5
+pytest==9.1.1
