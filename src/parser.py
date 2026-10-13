@@ -39,7 +39,8 @@ IGNORED_TYPE_NAMES = {"var"}
 class TypeReference:
     """One place where a declared type mentions another type by name."""
     kind: str        # extends | implements | field | method_return | method_param |
-                     # local_var | object_creation | annotation
+                     # local_var | object_creation | annotation | class_literal |
+                     # method_reference | static_access (naming heuristic)
     type_name: str   # name exactly as written (generics stripped), e.g. "Repo" or "a.b.Repo"
     line: int        # 1-based line number in the source file
 
@@ -102,6 +103,15 @@ def _type_names(node: Node | None, exclude: set[str]) -> list[str]:
             continue
         names.extend(_type_names(child, exclude))
     return names
+
+
+def _looks_like_type(name: str) -> bool:
+    """Java naming convention: types are UpperCamelCase, constants are UPPER_CASE.
+
+    Used only where the grammar cannot tell a type from a variable (Foo.bar(),
+    Foo::bar). It is a heuristic, so those references get their own kinds.
+    """
+    return name[:1].isupper() and (len(name) == 1 or any(c.islower() for c in name))
 
 
 def _type_parameter_names(node: Node) -> set[str]:
@@ -257,6 +267,21 @@ class JavaParser:
             elif t == "modifiers":
                 self._add_annotations(decl, child, params)
                 continue
+            elif t == "class_literal":                       # Foo.class
+                self._add_refs(decl, "class_literal", child.named_children[0], params)
+                continue
+            elif t == "method_reference":                    # Foo::bar
+                head = child.named_children[0]
+                if head.type == "identifier" and _looks_like_type(_text(head)):
+                    decl.references.append(TypeReference("method_reference", _text(head), _line(head)))
+                elif head.type not in ("identifier", "this", "super", "field_access",
+                                       "method_invocation"):
+                    self._add_refs(decl, "method_reference", head, params)
+            elif t in ("method_invocation", "field_access"):  # Foo.bar() / Foo.BAR
+                obj = child.child_by_field_name("object")
+                if obj is not None and obj.type == "identifier" \
+                        and _looks_like_type(_text(obj)) and _text(obj) not in params:
+                    decl.references.append(TypeReference("static_access", _text(obj), _line(obj)))
             self._walk_body(child, decl, result, outer, params)
 
     def _add_annotations(self, decl: TypeDeclaration, modifiers: Node, params: set[str]) -> None:

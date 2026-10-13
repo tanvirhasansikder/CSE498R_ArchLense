@@ -124,3 +124,25 @@ def test_cli_writes_json(tmp_path):
     out = tmp_path / "out.json"
     assert main([str(SAMPLE), "-o", str(out)]) == 0
     assert out.exists() and '"files_found": 5' in out.read_text(encoding="utf-8")
+
+
+def test_class_literal_method_reference_and_static_access():
+    src = b"""class A {
+        void f() {
+            register(B.class);
+            list.sort(C::compare);
+            D.run();
+            int x = E.LIMIT;
+            int y = MAX_SIZE.length;
+            local.call();
+        }
+    }"""
+    r = JavaParser().parse_source(src)
+    refs = {(x.kind, x.type_name) for x in r.types[0].references}
+    assert ("class_literal", "B") in refs
+    assert ("method_reference", "C") in refs
+    assert ("static_access", "D") in refs
+    assert ("static_access", "E") in refs
+    names = {x.type_name for x in r.types[0].references}
+    assert "MAX_SIZE" not in names     # ALL_CAPS constant, not a type
+    assert "local" not in names and "list" not in names
