@@ -1,0 +1,121 @@
+{
+  "schema": "archlens-rules/1",
+  "repository": "spring-petclinic-rest",
+  "baseline": {
+    "url": "https://github.com/spring-petclinic/spring-petclinic-rest",
+    "commit": "afc8fc1d3b8ec8de69414482b3bd70a1da78cb95",
+    "documentation": "readme.md, section 'Looking for something in particular?': Layer table listing REST API controllers (rest), Service (service/ClinicServiceImpl), and three persistence implementations JDBC (repository/jdbc), JPA (repository/jpa), Spring Data JPA (repository/springdatajpa). readme.md 'Database configuration' selects the implementation with spring.profiles.active.",
+    "baseline_check": "At the baseline commit afc8fc1, no rule is violated and no class is unclassified (verified with ArchLens on 2026-10-13)."
+  },
+  "layers": [
+    {
+      "name": "presentation",
+      "packages": [
+        "org.springframework.samples.petclinic.rest",
+        "org.springframework.samples.petclinic.web"
+      ],
+      "evidence": "readme Layer table: 'REST API controllers' -> rest folder. The earlier Spring MVC controllers in the web package (present in older history) play the same role; commit a994785f73a848058a4bad7b5bb2ef00f1b2fa2c (2013-02-12, 'made sure the ClinicService facade is used by all Controllers') treats them as controllers that must use the service layer."
+    },
+    {
+      "name": "service",
+      "packages": [
+        "org.springframework.samples.petclinic.service"
+      ],
+      "evidence": "readme Layer table: 'Service' -> service/ClinicServiceImpl.java"
+    },
+    {
+      "name": "repository_api",
+      "packages": [
+        "org.springframework.samples.petclinic.repository"
+      ],
+      "evidence": "Interfaces in the repository package root; implemented by each persistence folder"
+    },
+    {
+      "name": "persistence_impl",
+      "packages": [
+        "org.springframework.samples.petclinic.repository.jdbc",
+        "org.springframework.samples.petclinic.repository.jpa",
+        "org.springframework.samples.petclinic.repository.springdatajpa"
+      ],
+      "evidence": "readme Layer table: JDBC, JPA, Spring Data JPA folders"
+    },
+    {
+      "name": "model",
+      "packages": [
+        "org.springframework.samples.petclinic.model"
+      ],
+      "evidence": "Domain entities used by all layers (readme ER model)"
+    },
+    {
+      "name": "mapper",
+      "packages": [
+        "org.springframework.samples.petclinic.mapper"
+      ],
+      "evidence": "DTO/entity mappers used by rest"
+    },
+    {
+      "name": "infrastructure",
+      "packages": [
+        "org.springframework.samples.petclinic.config",
+        "org.springframework.samples.petclinic.security",
+        "org.springframework.samples.petclinic.util"
+      ],
+      "evidence": "Configuration, security and cross-cutting utilities; not part of the documented layer table"
+    },
+    {
+      "name": "application",
+      "packages": [],
+      "evidence": "Root-package application entry points / servlet initializers (bootstrapping only); mapped per class"
+    }
+  ],
+  "classes": {
+    "org.springframework.samples.petclinic.PetClinicApplication": "application",
+    "org.springframework.samples.petclinic.PetclinicInitializer": "application",
+    "org.springframework.samples.petclinic.ServletInitializer": "application"
+  },
+  "rules": [
+    {
+      "id": "ARCH-001",
+      "description": "The service layer must not depend directly on a persistence implementation (JDBC, JPA or Spring Data JPA classes); it must use the repository interfaces.",
+      "source_layers": [
+        "service"
+      ],
+      "forbidden_target_layers": [
+        "persistence_impl"
+      ],
+      "severity": "high",
+      "provenance": "derived",
+      "rationale": "The readme documents three interchangeable persistence implementations selected by Spring profile. A direct service-to-implementation dependency would tie the service to one implementation and break that documented design."
+    },
+    {
+      "id": "ARCH-002",
+      "description": "Controllers (REST controllers in rest, or Spring MVC controllers in web) must not depend directly on the persistence layer (repository interfaces or implementations); they must go through the service layer.",
+      "source_layers": [
+        "presentation"
+      ],
+      "forbidden_target_layers": [
+        "repository_api",
+        "persistence_impl"
+      ],
+      "severity": "medium",
+      "provenance": "documented",
+      "rationale": "The readme layer table orders REST API controllers above the Service layer. The project history states the rule explicitly: commit a994785f73a848058a4bad7b5bb2ef00f1b2fa2c 'made sure the ClinicService facade is used by all Controllers'."
+    },
+    {
+      "id": "ARCH-003",
+      "description": "Model (domain entity) classes must not depend on the presentation, service or persistence layers.",
+      "source_layers": [
+        "model"
+      ],
+      "forbidden_target_layers": [
+        "presentation",
+        "service",
+        "repository_api",
+        "persistence_impl"
+      ],
+      "severity": "medium",
+      "provenance": "derived",
+      "rationale": "Entities are shared by every layer; a dependency from model to a higher layer would create a cycle between layers."
+    }
+  ]
+}

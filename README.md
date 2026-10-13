@@ -9,6 +9,11 @@ Explainable architectural drift detection for Java (research prototype).
   It has been verified on one real commit pair; see
   `experiments/2026-10-13_petclinic_c953442_diff_verification.md`.
 
+- Phase 3 (done): layer classifier (`src/layer_classifier.py`), drift detector
+  (`src/drift_detector.py`) and evidence collector (`src/evidence_collector.py`), with
+  rules for spring-petclinic-rest (`rules/spring-petclinic-rest.json`). See
+  `experiments/2026-10-13_petclinic-rest_rules_history_and_seeds.md`.
+
 Requires Python 3.12+ (safe tar extraction) and Git on PATH.
 
 ## Setup (Windows PowerShell)
@@ -40,6 +45,31 @@ every `src/main/java` folder is analysed and test code is excluded; use
 `after_graph.json`, `diff.json` and `run_metadata.json` (commit hashes, dates and
 subjects, source roots, Python and package versions, run time). Evidence file paths are
 relative to the repository root.
+
+## Rule-based drift detection
+```powershell
+python -m src.drift_detector rules\spring-petclinic-rest.json --run results\<run_name>     # two versions
+python -m src.drift_detector rules\spring-petclinic-rest.json --graph <graph.json> -o <dir>  # one version
+python experiments\scan_history.py <repo> rules\spring-petclinic-rest.json -o results\history.csv
+python experiments\seed_check.py <repo> <commit> <rules.json> -o results\seeds --seed "<file>|<type>"
+```
+**Rule file (`archlens-rules/1`).** Defines layers (package prefixes; the longest match wins),
+explicit class-to-layer mappings, and rules (`source_layers` must not depend on
+`forbidden_target_layers`). Each rule records its `provenance` and `rationale`. Rule files
+are per repository: a rule is applied only to the repository it was written for.
+
+**Definitions.** A *violation* is an edge from a class in a rule's source layer to a class in a
+forbidden target layer. *Drift* means a violation present after a change but not before (status
+`introduced`). Violations present before and after are `persisting`; violations only before are
+`resolved`. A structural change that breaks no rule is never a finding.
+
+**Applicability.** A rule is evaluated on a version only if the rule file is for that repository
+and the rule's layers contain classes in that version. Otherwise it is reported as not applicable,
+with the reason. Edges touching an unclassified class are counted, not judged.
+
+**Findings** (`findings.json`, `findings.csv`): a stable ID (the same rule, source and target always give
+the same ID), status, rule, layers, every evidence location (file, line, kind), the reason the
+rule applies, commits, and limitations.
 
 ## Architecture graph (`archlens-graph/1`)
 Nodes are project types, identified by fully qualified name, with path, line and

@@ -57,8 +57,10 @@ python experiments/verify_diff.py <path-to>/spring-petclinic results/petclinic_c
 
 ## Who verified
 - Checks 1 and 2 were run by script and read by Claude (the AI assistant).
-- **Pending:** a human spot-check by Himel of at least 3 edges against `git show c953442`.
-  Until that is done, report this as "script-verified", not "independently verified".
+- Human spot-check: on 2026-10-13 Himel ran `git show c953442` on Pet.java, PetTypeFormatter.java and
+  VisitController.java (3 of the 10 changed edges) and confirmed them. His reply was "okay done", and Claude
+  recorded it as agreement with all three. The diff output he pasted shows the expected `-`/`+` lines.
+- Status: 3/10 edges checked by a human, 10/10 checked by script.
 
 ## Limitations
 - This is one commit pair in one small project, so it shows correctness on this case, not in general.

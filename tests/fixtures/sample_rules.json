@@ -1,0 +1,23 @@
+{
+  "schema": "archlens-rules/1",
+  "repository": "sample",
+  "baseline": {"note": "Test fixture only"},
+  "layers": [
+    {"name": "controller",       "packages": ["com.example.controller"]},
+    {"name": "service",          "packages": ["com.example.service"]},
+    {"name": "repository_api",   "packages": ["com.example.repository"]},
+    {"name": "persistence_impl", "packages": []},
+    {"name": "model",            "packages": ["com.example.model"]}
+  ],
+  "classes": {
+    "com.example.repository.JdbcUserRepository": "persistence_impl"
+  },
+  "rules": [
+    {"id": "T-001", "description": "Service must not depend on a persistence implementation.",
+     "source_layers": ["service"], "forbidden_target_layers": ["persistence_impl"],
+     "severity": "high", "provenance": "test"},
+    {"id": "T-002", "description": "Controllers must not depend on the persistence layer.",
+     "source_layers": ["controller"], "forbidden_target_layers": ["repository_api", "persistence_impl"],
+     "severity": "medium", "provenance": "test"}
+  ]
+}
